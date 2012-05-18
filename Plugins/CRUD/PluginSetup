@@ -1,0 +1,479 @@
+﻿<?lassoscript
+
+	define CRUD => type {
+
+		data private armsetup
+		data private datasource::string
+		data private datasourceid::integer
+		data private hostname::string
+		data private hostid::integer
+		data private hostport::integer
+		data private hostusername::string
+		data private hostpassword::string
+		data private database::string
+		data private tables::array = array
+
+		public oncreate(armsetup) => { .'armsetup' = #armsetup }
+
+		public ordinal() => { return 0.50 }
+
+		public version() => { return '1.0' }
+
+		public description() => {
+			return 'CRUD is an acronym that stands for "Create, Read, Update, and Delete". The CRUD Plugin automatically generates paths (or "pages") within your application, based on the name of a database and a list of tables, which allow you to create ("insert" or "add"), read ("select", "search" or "find"), update ("edit), and delete ("destroy") records from each of those table.'
+		}
+
+		public main() => {
+			local('input' = .'armsetup'->queryuser('Would you like to use the CRUD Plugin at this time? (y/n) '))
+			#input->trim
+			if(#input == 'y') => {
+				stdoutnl('Great! If at any time you wish to cancel and skip out of the CRUD plugin, just answer any question with a single tab-character, and press enter.')
+				stdoutnl('')
+				stdout('Now, let\'s get started. ')
+				.initializedatabase
+				.getdatasource
+			else(#input != 'n')
+				.main
+			}
+		}
+
+		private getdatasource(-repeat::boolean=false) => {
+			local('activedatasources' = (with ds in database_registry->listActiveDatasources select pair(#ds->find('id')=#ds->find('name')))->asstaticarray)
+			local('dsstring' = string)
+			iterate(#activedatasources) => {
+				if(loop_count == #activedatasources->size && #activedatasources->size != 1) => {
+					#dsstring += ', or '
+				else(loop_count > 1)
+					#dsstring += ', '
+				}
+				#dsstring += ('[' + loop_value->name + '] ' + loop_value->value)
+			}
+			if(!#repeat) => {
+				stdoutnl('')
+				stdout('Okay, ')
+			else
+				stdout('Please ')
+			}
+			stdout('enter the name, or corresponding id-number, of the active datasources your database resides in (' + #dsstring + ')')
+			local('datasource' = integer)
+			local('input' = .'armsetup'->queryuser(': '))
+			if(.proceed(#input)) => {
+				#input->trim
+				local(i = 0)
+				while(#i < #activedatasources->size) => {
+					#i = #i + 1
+					if(#activedatasources->get(#i)->name == integer(#input) || #activedatasources->get(#i)->value == #input) => {
+						#datasource = #activedatasources->get(#i)->name
+					}
+				}
+				if(#datasource) => {
+					.'datasource' = database_registry->getDatasourceName(#datasource)
+					.'datasourceid' = #datasource
+					.getHost
+				else
+					stdoutnl(.invalidreply + ' ')
+					.getdatasource(-repeat)
+				}
+			}
+		}
+
+		private getHost(-repeat::boolean=false) => {
+			local('availablehosts' = database_registry->listDatasourceHosts(.'datasourceid'))
+			local('hoststring' = string)
+			local('hosts' = (with ds in #availablehosts select map(pair('id'=#ds->find('id')), pair('port'=#ds->find('port')), pair('username'=#ds->find('username')), pair('password'=#ds->find('password')), pair('name'=#ds->find('name')), pair('alias'=#ds->find('alias'))))->asstaticarray)
+			iterate(#hosts, local(h)) => {
+				if(loop_count == #hosts->size && #hosts->size != 1) => {
+					#hoststring += ', or '
+				else(loop_count > 1)
+					#hoststring += ', '
+				}
+				#hoststring += ('[' + #h->find('id') + '] ' + ( #h->find('alias') ? #h->find('alias') | #h->find('name') ))
+			}
+
+			stdout('Enter the name of the host you wish to use')
+			if(#hosts->size) => {
+				stdout(', or enter the corresponding id-number of an exiting host (' + #hoststring + ')')
+			}
+			local('input' = .'armsetup'->queryuser(': '))
+			if(.proceed(#input)) => {
+				#input->trim
+
+				local('existinghost' = null)
+				iterate(#hosts, local(h)) => {
+					if(integer(#input) == #h->find('id') || string(#input) == #h->find('alias') || (#h->find('alias')->type == null->type && string(#input) == #h->find('name'))) => {
+						#existinghost = #h
+					}
+				}
+				if(#existinghost->type == map->type) => {
+					.'hostname' = ( #existinghost->find('alias') ? #existinghost->find('alias') | #existinghost->find('name') )
+					.'hostid' = integer(#existinghost->find('id'))
+					.'hostport' = integer(#existinghost->find('port'))
+					.'hostusername' = #existinghost->find('username')
+					.'hostpassword' = #existinghost->find('password')
+
+					.getdatabase
+
+				else(#input->size)
+
+					.'hostname' = #input
+
+					if(.gethostport && .gethostusername && .gethostpassword) => {
+
+						local('hostmap' = map(
+							'id_datasource'=.'datasourceid',
+							'name'=.'hostname',
+							'username'=.'hostusername',
+							'password'=.'hostpassword'
+						))
+						if(.'hostport' > 0) => {
+							#hostmap->insert('port'=.'hostport')
+						}
+
+						// This will probably never be used...  DB.
+						local('newalias' = .'hostname')
+						local('hostaliases' = (with h in #hosts select (#h->find('alias') ? #h->find('alias') | #h->find('name')))->asstaticarray)
+						while(#hostaliases >> #newalias) => {
+							#newalias->append('*')
+						}
+						if(#newalias != .'hostname') => {
+							#hostmap->insert('alias'=#newalias)
+						}
+
+						stdoutnl('We\'ll try adding that host. This operation can take up to 60-seconds to complete...')
+						protect => {
+							handle => {
+								if(error_currenterror == error_noerror) => {
+									stdoutnl('Host added.')
+								else
+									stdoutnl('Oops! Sorry, that host couldn\'t be added.')
+									
+									local('badhost' = (with h in database_registry->listDatasourceHosts(.'datasourceid')
+										where #h->find('name') == .'hostname'
+										and #h->find('username') == .'hostusername'
+										and #h->find('password') == .'hostpassword'
+										select #h)->asstaticarray
+									)
+									
+									if(#badhost->last->hasmethod(::find)) => {
+										if(integer(#badhost->last->find('id')) > 1) => {
+											database_registry->removeDatasourceHost(integer(#badhost->last->find('id')))
+										}
+									}
+								}
+							}
+							database_registry->addDatasourceHost(.'datasourceid', #hostmap)
+							local('goodhost' = (with h in database_registry->listDatasourceHosts(.'datasourceid')
+								where #h->find('name') == .'hostname'
+								and #h->find('username') == .'hostusername'
+								and #h->find('password') == .'hostpassword'
+								select #h)->asstaticarray
+							)
+							if(integer(#goodhost->last->find('id')) > 1) => {
+								.'hostid' = integer(#goodhost->last->find('id'))
+							}
+						}
+
+						.getdatabase
+					}
+
+				else
+					stdoutnl(.invalidreply + ' ')
+					.getHost(-repeat)
+				}
+			}
+		}
+
+		private gethostport(-repeat::boolean=false) => {
+			local(o = true)
+			stdout('Enter the port for the new host, if different from the default')
+			local('input' = .'armsetup'->queryuser(': '))
+			if(.proceed(#input)) => {
+				#input->trim
+				if(integer(#input) != 0) => {
+					.'hostport' = integer(#input)
+				}
+			else
+				#o = false
+			}
+			return #o
+		}
+
+		private gethostusername(-repeat::boolean=false) => {
+			local(o = true)
+			stdout('Enter the username for the new host')
+			local('input' = .'armsetup'->queryuser(': '))
+			if(.proceed(#input)) => {
+				#input->trim
+				if(#input->size) => {
+					.'hostusername' = #input
+				else
+					stdoutnl(.invalidreply + ' ')
+					#o = .gethostusername(-repeat)
+				}
+			else
+				#o = false
+			}
+			return #o
+		}
+
+		private gethostpassword(-repeat::boolean=false) => {
+			local(o = true)
+			stdout('Enter the password for the new host')
+			local('input' = .'armsetup'->queryuser(': '))
+			if(.proceed(#input)) => {
+				#input->trim
+				if(#input->size) => {
+					.'hostpassword' = #input
+				else
+					stdoutnl(.invalidreply + ' ')
+					#o = .gethostpassword(-repeat)
+				}
+			else
+				#o = false
+			}
+			return #o
+		}
+
+		private getdatabase(-repeat::boolean=false) => {
+			local('dbstring' = string)
+			local('databases' = staticarray)
+			if(.'hostid' > 0) => {
+				#databases = (with db in database_registry->listHostDatabases(.'hostid') select pair(#db->find('id')=(#db->find('alias') ? #db->find('alias') | #db->find('name'))))->asstaticarray
+				iterate(#databases, local(d)) => {
+					if(loop_count == #databases->size &&  #databases->size != 1) => {
+						#dbstring += ', or '
+					else(loop_count > 1)
+						#dbstring += ', '
+					}
+					#dbstring += ('[' + #d->name + '] ' + #d->value)
+				}
+			}
+
+			stdout('Enter the name of the database you wish to use')
+			if(#databases->size) => {
+				stdout(', or enter the corresponding id-number of an exiting database (' + #dbstring + ')')
+			}
+			local('input' = .'armsetup'->queryuser(': '))
+			if(.proceed(#input)) => {
+
+				#input->trim
+				if(string(integer(#input))->size == #input->size && #databases->find(integer(#input))->first->type == pair->type) => {
+					.'database' = string(#databases->find(integer(#input))->first->value)
+					.gettable
+
+				else(#input->size)
+
+					.'database' = #input
+					.gettable
+
+				else
+					stdoutnl(.invalidreply + ' ')
+					.getdatabase(-repeat)
+				}
+			}
+		}
+
+		private gettable(-repeat::boolean=false) => {
+			local('database' = database_registry->getDatabaseByName(.'database'))
+			local('dbid' = integer)
+			if(#database->type == map->type) => {
+				#dbid = #database->find('id')
+			}
+
+			local('tablestring' = string)
+			local('existingtables' = (with t in database_registry->listDatabaseTables(#dbid) select pair(#t->find('id')=#t->find('name')))->asstaticarray)
+			iterate(#existingtables, local(t)) => {
+				if(loop_count == #existingtables->size &&  #existingtables->size != 1) => {
+					#tablestring += ', or '
+				else(loop_count > 1)
+					#tablestring += ', '
+				}
+				#tablestring += ('[' + #t->name + '] ' + #t->value)
+			}
+
+			stdout('Enter the name of the table you wish to use')
+			if(#existingtables->size) => {
+				stdout(', or enter the corresponding id-number of an exiting table (' + #tablestring + ')')
+			}
+			local('input' = .'armsetup'->queryuser(': '))
+			if(.proceed(#input)) => {
+				#input->trim
+				if(#input->size == 0) => {
+					stdoutnl(.invalidreply + ' ')
+					.gettable(-repeat)
+				else
+					local('tables' = array)
+					iterate(#input->split(','), local(t)) => {
+						#t->trim
+						local('table' = null)
+						if(string(integer(#t))->size == #t->size && #existingtables->find(integer(#t))->first->type == pair->type) => {
+							#table = string(#existingtables->find(integer(#t))->first->value)
+						else(#input->size)
+							#table = #t
+						}
+						if(#table->type == string->type) => {
+							local('keyfield' = .getkeyfield(#table))
+							if(#keyfield->type == void->type) => {
+								#tables = map
+								loop_abort
+							else
+								#tables->insert(#table=#keyfield)
+							}
+						}
+					}
+					if(#tables->size) => {
+						.'tables' = #tables
+						.buildapp
+						if(not .more) => {
+							.goodbye
+						}
+					}
+				}
+			}
+		}
+
+		private getkeyfield(table::string) => {
+			local(o = string)
+			stdout('Enter the name of the primary key field for table `' + #table + '`')
+			local('input' = .'armsetup'->queryuser(': '))
+			if(.proceed(#input)) => {
+				#input->trim
+				#o = #input
+			else
+				#o = void
+			}
+			return #o
+		}
+
+		private buildapp() => {
+			protect => {
+				handle_failure => {
+					stdoutnl(error_msg)
+				}
+				.copyfile(
+					-from=('Plugins/CRUD/SupportFiles/_libraries/plugin_host__hostnick.lasso'),
+					-to=('/_libraries/plugin_host_' + .makenick(.'hostname') + '.lasso')
+				)
+				iterate(.'tables', local('table')) => {
+					.copyfile(
+						-from=('Plugins/CRUD/SupportFiles/_models/_path_mod.lasso'),
+						-to=('/_models/' + .makenick(#table->name) + '_mod.lasso'),
+						-table=#table
+					)
+					.copyfile(
+						-from=('Plugins/CRUD/SupportFiles/_views/_path_view.lasso'),
+						-to=('/_views/' + .makenick(#table->name) + '_view.lasso'),
+						-table=#table
+					)
+					.copyfile(
+						-from=('Plugins/CRUD/SupportFiles/_controllers/_path_cont.lasso'),
+						-to=('/_controllers/' + .makenick(#table->name) + '_cont.lasso'),
+						-table=#table
+					)
+				}
+			}
+		}
+
+		private copyfile(-from::string, -to::string, -table::pair=pair)::void => {
+			protect => {
+				handle_failure => {
+					error_msg('Error reading file: ' + #from)
+					error_code(-1)
+				}
+				local('prototype' = file(#from)->readstring)
+			}
+			if(error_currenterror == error_noerror) => {
+				local('hostarraystr' = string)
+				#hostarraystr += 'array('
+				#hostarraystr += '\r\t\t\t\t\t-datasource=\'' + .'datasource' + '\', '
+				#hostarraystr += '\r\t\t\t\t\t-name=\'' + .'hostname' + '\', '
+				if(.'hostport' > 0) => {
+					#hostarraystr += '\r\t\t\t\t\t-port=\'' + .'hostport' + '\''
+				}
+				#hostarraystr += '\r\t\t\t\t\t-username=\'' + .'hostusername' + '\', '
+				#hostarraystr += '\r\t\t\t\t\t-password=\'' + .'hostpassword' + '\''
+				#hostarraystr += '\r\t\t\t\t)'
+	
+				#prototype->replace('_hostarray', #hostarraystr)
+				#prototype->replace('_hostnick', .makenick(.'hostname'))
+				if(#table->name != '') => {
+					#prototype->replace('_database', string(.'database'))
+					#prototype->replace('_table', string(#table->name))
+					if(.'datasource' == 'filemakerds') => {
+						#prototype->replace('_keyfieldvalue', '')
+					else
+						#prototype->replace('_keyfieldvalue', 'lasso_uniqueid')
+					}
+					#prototype->replace('_keyfield', string(#table->value))
+					#prototype->replace('_pathname', string(#table->name))
+					#prototype->replace('_path', .makenick(string(#table->name)))
+				}
+				#prototype->replace('_hostnick', .makenick(.'hostname'))
+				#prototype->replace('_appname', string(.'armsetup'->appname))
+				#prototype->replace('_app', string(.'armsetup'->appnick))
+				#prototype->replace('_hostnick', .makenick(.'hostname'))
+				protect => {
+					handle_failure => {
+						error_msg('Error writing file: ' + #to)
+						error_code(-1)
+					}
+					.'armsetup'->addfile(-contents=#prototype->asbytes, -path=#to, -name=string(#table->name))
+				}
+			}
+		}
+
+		private more()::boolean => {
+			stdout('Would you like to create CRUD paths for additonal tables? ')
+			local('input' = .'armsetup'->queryuser('(y/n) '))
+			#input->trim
+			if(#input == 'y') => {
+				.getdatasource
+			else(#input != 'n')
+				stdoutnl('Invalid entry. ')
+				.more
+			else
+				return false
+			}
+		}
+
+		private goodbye() => {
+			stdoutnl('Goodbye.')
+		}
+
+		public proceed(input::string) => {
+			local(o = true)
+			local(i = string(#input))
+			#i->trim
+			if(#input->beginswith('\t') && #i->size == 0) => {
+				#o = false
+				stdoutnl('')
+				stdout('CRUD Plugin aborted by user. ')
+			}
+			return #o
+		}
+
+		public invalidreply() => {
+			return 'Invalid entry. If you want to cancel and skip out of the Auth plugin, just answer with a single tab-character, and press enter.'
+		}
+
+		public initializedatabase() => {
+			stdoutnl('First we\'ll initialize the databases.')
+			protect => {
+				handle_failure => {
+					database_initialize
+				}
+				lcapi_loadModules
+				database_registry->listActiveDatasources // generates an error, if CLI instance not properly setup.
+			}
+		}
+
+		private makenick(name::string) => {
+			local('nick' = string(#name))
+			#nick->lowercase
+			#nick=string_replaceregexp(#nick, -find='[^A-Za-z0-9-_\\.~]', -replace='')
+			return #nick
+		}
+
+	}
+
+?>

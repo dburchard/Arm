@@ -1,0 +1,477 @@
+﻿<?lassoscript
+
+	/*
+	 * Arm Framework, ArmSetup Assistant b3.0
+	 *
+	 * Copyright (c) 2012, Douglas Burchard
+	 * Arm, and its accompanying files, are released under three
+	 * licenses: MIT, BSD, and LGPL. You may pick the license 
+	 * that best suits your development needs. See the LICENSE 
+	 * file which accompanied the ArmSetup assistant for more 
+	 * information.
+	 *
+	 * Date: February 13 2012
+	 */
+
+	define armsetup => type {
+
+		data private appname::string = string
+		data private appnick::string = string
+		data private rootdir::string = string
+		data private dbname::string = string
+		data private defaultnick::string = string
+		data private unknownnick::string = string
+		data private existingfiles::array = array
+		data private newfiles::map = map
+		data public libraries::array = array
+		data public traits::array = array
+		data private plugins::array = array
+		data private fileperms::integer = 509
+		data private dirperms::integer = 509
+		data private navlinks::array = array
+
+		public main() => {
+			.welcome
+			.getwebroot
+			.getappname
+			.readplugins
+			.getdefaultpath
+			.getunknownpath
+			.createstaticfiles
+			.createappfiles
+			.createindexfile
+			.writefiles
+			.writelibraries
+			.writetraits
+			.goodbye
+		}
+
+		public asstring() => { }
+	
+		private welcome() => {
+			stdoutnl('')
+			stdoutnl('********************************')
+			stdoutnl('Welcome to the Setup Assistant for the Arm Framework, written for Lasso 9.')
+			stdoutnl('You\'re just a few quick questions away from a complete MVC scaffold, from which you can develop your web application.')
+			stdoutnl('********************************')
+		}
+
+		private goodbye() => {
+			stdoutnl('')
+			stdoutnl('Arm scaffold completed.')
+			stdoutnl('You may access your web application scaffold at ' + .webroot + '.')
+		}
+
+		public appname(name::string) => { .'appname' = #name }
+
+		public appname() => { return .'appname' }
+
+		public appnick(nick::string) => { .'appnick' = #nick }
+
+		public appnick() => { return .'appnick' }
+
+		public webroot(root::string) => {
+			local('r' = #root)
+			#r->replace('/', file_pathdelimiter)
+			.'rootdir' = #r
+		}
+
+		public webroot() => { return .'rootdir' }
+
+		public appdatabase(dbname::string) => { .'dbname' = #dbname }
+
+		public appdatabase() => { return .'dbname' }
+
+		public defaultpath(name::string) => { .'defaultnick' = .getnick(#name) }
+
+		public defaultpath() => { return .'defaultnick' }
+
+		public unknownpath(name::string) => {
+			.'unknownnick' = .getnick(#name)
+		}
+
+		public unknownpath() => { return .'unknownnick' }
+
+		public addfile(-contents::bytes, -path::string, -name::string='') => {
+			// if a library, store as a library
+			// if a path, store as a path
+			local('p' = #path)
+			#p->removeleading('/')
+			.'newfiles'->insert(#p=#contents)
+			if(#p->beginswith('_controllers/')) => {
+				local('path' = string(#p))
+				#path->removeleading('_controllers/')
+				#path->removetrailing('_cont.lasso')
+				.addnavlink(-path=#path, -name=#name)
+			}
+		}
+
+		public addnavlink(-path::string, -name::string) => {
+			// .'navlinks'->removeall(#name=('/' + #path))
+			if(#path == .'defaultnick') => {
+				.'navlinks'->insertfirst(#name=('/' + #path))
+			else(#path != .'unknownnick')
+				.'navlinks'->insert(#name=('/' + #path))
+			}
+		}
+
+		public pathexists(path::string) => {
+			return (.'newfiles' >> ('_controllers/' + #path + '_cont.lasso') || .'existingfiles' >> ('_controllers/' + #path + '_cont.lasso'))
+		}
+
+		public addlibrary(-file::string, -library::string) => {
+
+			/*
+
+				This is not a means of adding a file to the libraries
+				directory. To do that, use addfile.
+
+				This is a means of including a file in the libraries
+				directory, within another file. The include will be
+				performed using a library_once method, near the top
+				of the indicated file.
+
+				Required parameters:
+
+					-file: 		the path to the file within which to
+								include the library.
+
+					-library: 	the path to the library to be included.
+
+				All paths are referenced from the web root.
+
+			*/
+			local('f' = #file)
+			#f->removeleading('/')
+			local('l' = #library)
+			#l->removeleading('/')
+			.'libraries'->insert(#f=#l)
+		}
+
+		public addtrait(-file::string, -trait::string, -method::string = '') => {
+			/*
+
+				before calling this method, you should consider whether you need
+				to use the addlibrary method, to include the library containing
+				the trait definition within the targeted file.
+				
+				The trait will be added to the first type definition found in the
+				target file. And, the method call will be added to the first 
+				onCreate callback defined in the same file.
+
+				Required parameters:
+
+					-file: 		The path to the file within which to
+								locate a type definition.
+
+					-trait: 	The name of the trait to me included
+								in the definition.
+
+				Optional parameters:
+
+					-method: 	The method to call in the onCreate
+								callback definition.
+
+				All paths are referenced from the web root.
+
+				Example:
+
+					addtrait(-file='_controllers/mypage_cont.lasso', -trait='auth', -method='main')
+
+				Forward slash ('/') is automatically replaced with the path delimiter
+				consistent with the current operation system.
+
+			*/
+			local('f' = #file)
+			#f->replace('/', file_pathdelimiter)
+			#f->removeleading(file_pathdelimiter)
+			.'traits'->insert(map('file'=#f, 'trait'=#trait, 'method'=#method))
+		}
+
+		private readplugins() => {
+			stdoutnl('')
+			stdoutnl('Reading plugins...')
+			local('pluginroot') = dir('Plugins/')
+			with d in #pluginroot->eachDirPath
+			do {
+				local('pluginname' = string(#d))
+				#pluginname->removetrailing(file_pathdelimiter)
+				#pluginname = #pluginname->split(file_pathdelimiter)->last
+				protect => {
+					handle_failure => {
+						stdoutnl('   * ' + #pluginname + ' plugin failed to load: ' + error_msg)
+					}
+					local('f' = file(#d + 'PluginSetup'))
+					sourcefile(#f)()
+					if(#pluginname == 'ArmCore') => {
+						.'plugins'->insertfirst(escape_tag(#pluginname)(self))
+					else
+						.'plugins'->insert(escape_tag(#pluginname)(self))
+					}
+					stdoutnl('   * ' + #pluginname + ' plugin available.')
+				}
+			}
+
+			.'plugins' = array(:(with p in .'plugins' order by #p->ordinal select #p))
+
+			iterate(.'plugins', local('p')) => {
+				stdoutnl('')
+				if(not #p->hasmethod(::main)) => {
+					stdoutnl('Error! ' + #p + ' plugin has no ->main method.')
+				else(not #p->hasmethod(::version))
+					stdoutnl('Error! ' + #p + ' plugin has no ->version method.')
+				else(not #p->hasmethod(::description))
+					stdoutnl('Error! ' + #p + ' plugin has no ->description method.')
+				else
+					stdoutnl(#p + ' Plugin, version ' + #p->version + ' --')
+					stdoutnl(#p->description)
+					#p->main
+				}
+			}
+		}
+	
+		private getwebroot(-nodesc::boolean = false) => {
+			stdoutnl('')
+			if(!#nodesc) => {
+				stdoutnl('Enter the full file-path, to the root directory for your new web application.')
+				stdoutnl('If the directory does not yet exist, this assistant will attept to create it.')
+			}
+			local('rootdir' = string)
+			#rootdir = .queryuser('File-path to root directory: ')
+			#rootdir->trim
+			#rootdir->removetrailing('/')
+			#rootdir->removetrailing(file_pathdelimiter)
+			if(#rootdir->size == 0) => {
+				stdoutnl('Invalid Entry! You must enter a directory path, where your web application files are to be placed.')
+				#rootdir = file_pathdelimiter
+				.getwebroot(-nodesc)
+			else
+				.webroot(#rootdir)
+				.pullexistingfiles
+			}
+		}
+	
+		private pullexistingfiles() => {
+			local('wrd' = dir(.webroot))
+			if(#wrd->exists) => {
+				.'existingfiles' = array(:(with fp in #wrd->eachFilePathRecursive where #fp !>> '/.' select #fp))
+				with fp in .'existingfiles' do #fp->removeleading(.webroot)
+			}
+		}
+	
+		private getappname() => {
+			if(.appnick->size == 0) => {
+				stdoutnl('')
+				local('appname' = .queryuser('Enter a name for your new web application: '))
+				#appname->trim
+				local('appnick' = string(#appname))
+				#appnick->lowercase
+				#appnick=string_replaceregexp(#appnick, -find='[^A-Za-z0-9-_\\.~]', -replace='')
+				if(#appnick->size == 0) => {
+					stdoutnl('Invalid Entry! Your web application\'s name must contain at least one alphanumerical ASCII characters.')
+					.getappname
+				else
+					.appname(#appname)
+					.appnick(#appnick)
+				}
+			}
+		}
+
+		protected getdefaultpath(-nodesc::boolean = false) => {
+			if(.defaultpath->size == 0 && .'existingfiles' !>> '/index.lasso') => {
+				stdoutnl('')
+				if(!#nodesc) => {
+					stdoutnl('Enter the name of the path that should be returned, if no path is requested. This is analogous to the index page of a website.')
+				}
+				local('defaultname' = .queryuser('Default path: '))
+				local('defaultpath' = string(#defaultname))
+				#defaultpath->trim
+				#defaultpath->lowercase
+				#defaultpath=string_replaceregexp(#defaultpath, -find='[^A-Za-z0-9-_\\.~]', -replace='')
+				.defaultpath(#defaultpath)
+				if(.defaultpath->size == 0) => {
+					stdoutnl('Invalid Entry! Your web application must have a default path assigned.')
+					.getdefaultpath(-nodesc)
+				else(not .pathexists(#defaultpath))
+					.addpath(#defaultname)
+				else
+					.addnavlink(-path=#defaultpath, -name=#defaultname)
+				}
+			}
+		}
+	
+		protected getunknownpath() => {
+			if(.unknownpath->size == 0 && .'existingfiles' !>> '/index.lasso') => {
+				.unknownpath('error')
+				if(not .pathexists('error')) => {
+					.addpath('Error')
+				}
+			}
+		}
+
+		protected addpath(pathname::string) => {
+			#pathname->trim
+			local('pathnick' = string(#pathname))
+			#pathnick->lowercase
+			#pathnick=string_replaceregexp(#pathnick, -find='[^A-Za-z0-9-_\\.~]', -replace='')
+			if(#pathnick->size > 0) => {
+
+				local('modelprototype' = file('SupportFiles/_models/_path_mod.lasso')->readstring)
+				#modelprototype->replace('_appname', .appname)
+				#modelprototype->replace('_app', .appnick)
+				#modelprototype->replace('_pathname', #pathname)
+				#modelprototype->replace('_path', #pathnick)
+				.addfile(-contents=#modelprototype->asbytes, -path='/_models/' + #pathnick + '_mod.lasso')
+
+				local('viewprototype' = file('SupportFiles/_views/_path_view.lasso')->readstring)
+				#viewprototype->replace('_appname', .appname)
+				#viewprototype->replace('_app', .appnick)
+				#viewprototype->replace('_pathname', #pathname)
+				#viewprototype->replace('_path', #pathnick)
+				.addfile(-contents=#viewprototype->asbytes, -path='/_views/' + #pathnick + '_view.lasso')
+
+				local('controllerprototype' = file('SupportFiles/_controllers/_path_cont.lasso')->readstring)
+				#controllerprototype->replace('_appname', .appname)
+				#controllerprototype->replace('_app', .appnick)
+				#controllerprototype->replace('_pathname', #pathname)
+				#controllerprototype->replace('_path', #pathnick)
+				.addfile(-contents=#controllerprototype->asbytes, -path='/_controllers/' + #pathnick + '_cont.lasso', -name=#pathname)
+
+			}
+		}
+	
+		protected createstaticfiles() => {
+			iterate(array('_libraries/arm.lasso','_templates/default.lasso','images/bwa.png','styles/screen.css'), local('filepath')) => {
+				if(.'existingfiles' !>> '/' + #filepath) => {
+					.addfile(-contents=file('SupportFiles/' + #filepath)->readbytes, -path=#filepath)
+				}
+			}
+		}
+	
+		protected createappfiles() => {
+			local('filepath' = 'app__app.lasso')
+			local('filename' = string(#filepath))
+			#filename->replace('_app', .appnick)
+			if(.'existingfiles' !>> '/_libraries/' + #filename) => {
+				local('contents' = file('SupportFiles/_libraries/' + #filepath)->readstring)
+				#contents->replace('_app', .appnick)
+				.addfile(-contents=#contents->asbytes, -path='_libraries/' + #filename)
+			}
+		}
+	
+		protected createindexfile() => {
+			local('contents' = file('SupportFiles/index.lasso')->readstring)
+			if(.'existingfiles' !>> '/index.lasso') => {
+				#contents->replace('_defaultpath', .defaultpath)
+				#contents->replace('_unknownpath', .unknownpath)
+				.addfile(-contents=#contents->asbytes, -path='index.lasso')
+			}
+		}
+
+		private writefiles() => {
+			local('wrd' = dir(.webroot))
+			if(not #wrd->exists) => {
+				#wrd->create
+				#wrd->chmod(.'dirperms')
+			}
+			iterate(array('_libraries','_templates','_models','_views','_controllers'), local('dirpath')) => {
+				local('mdir' = dir(.webroot + '/' + #dirpath))
+				if(not #mdir->exists) => {
+					#mdir->create
+					#mdir->chmod(.'dirperms')
+				}
+			}
+			iterate(.'newfiles', local('f')) => {
+				if(#f->first > 0 && #f->second->size > 0) => {
+					local('file' = file(.webroot + file_pathdelimiter + #f->first))
+					if(not #file->exists) => {
+
+						local('dirpath' = .webroot + file_pathdelimiter + #f->first)
+						#dirpath->removetrailing(#dirpath->split(file_pathdelimiter)->last)
+						local('dir' = dir(#dirpath))
+						if(not #dir->exists) => {
+							#dir->create
+							#dir->chmod(.'dirperms')
+						}
+
+						#file->writebytes(#f->second)
+						#file->chmod(.'fileperms')
+					else
+						stdoutnl('Error: File already exists "' + #f->first + '". No action taken.')
+					}
+					#file->close
+				}
+			}
+			
+			if(.'navlinks'->size > 0) => {
+				protect => {
+					handle_failure => {
+						stdoutnl('Error writing navigation: ' + error_msg + '/' + .'navlinks')
+						abort
+					}
+					local('links' = null)
+					local('navfile' = file(.webroot + '/_libraries/plugin_sitenav.lasso'))
+					if(not #navfile->exists) => {
+						#links = xml('<xml></xml>')
+					else
+						#links = xml(#navfile->readbytes)
+						if(#links->type == void->type) => {
+							#links = xml('<xml></xml>')
+						}
+					}
+					iterate(.'navlinks', local('l')) => {
+						#links->appendchild(xml('<link>\r\t<label>' + #l->name + '</label>\r\t<href>' + #l->value + '</href>\r</link>'))
+					}
+					#navfile->writebytes(#links->asstring->asbytes)
+					#navfile->chmod(.'fileperms')
+					#navfile->close
+				}
+			}
+
+		}
+
+		private writelibraries() => {
+			iterate(.'libraries', local('p')) => {
+				local('fp' = #p->first)
+				local('lib' = #p->second)
+				local('file' = file(.webroot + '/' + #fp))
+				local('contents' = #file->readstring)
+				if(#contents >> ('library_once(\'/' + #lib + '\')')) => {
+				else(string_findregexp(#contents, -find='^(.*?)<\\?lassoscript\\s+library_once')->size == 0)
+					#contents = string_replaceregexp(#contents, -find='^(.*?)<\\?lassoscript', -replace='\\1<\\?lassoscript\r\r\tlibrary_once\\(\'/' + #lib + '\'\\)')
+		
+				else
+					#contents = string_replaceregexp(#contents, -find='([ \\t]+)library_once', -replace='\\1library_once\\(\'/' + #lib + '\'\\)\n\\1library_once')
+				}
+				#file->writebytes(#contents)
+				#file->close
+			}
+		}
+
+		private writetraits() => {
+		}
+	
+		public queryuser(question::string) => {
+			local('reply' = string)
+			while(#reply->size == 0) => {
+				stdout(#question)
+				#reply = string(file_stdin->readSomeBytes(1024, 1000))
+				while(not #reply or #reply->size == 0) => {
+					#reply = string(file_stdin->readSomeBytes(1024, 1000))
+				}
+			}
+			return #reply
+		}
+
+		public getnick(name::string) => {
+			local('nick' = string(#name))
+			#nick->trim
+			#nick->lowercase
+			#nick=string_replaceregexp(#nick, -find='[^A-Za-z0-9-_\\.~]', -replace='')
+			return #nick
+		}
+	}
+
+	armsetup->main
+
+?>

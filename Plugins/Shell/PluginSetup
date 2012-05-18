@@ -1,0 +1,92 @@
+﻿<?lassoscript
+
+	define Shell => type {
+
+		data private armsetup
+
+		public oncreate(armsetup) => { .'armsetup' = #armsetup }
+
+		public ordinal() => { return 1.0 }
+
+		public version() => { return '1.0' }
+
+		public description() => {
+			return 'The Shell Plugin creates paths that have all of the minimum objects, but little to no functionality. Path shells provide a good starting point for highly custom portions of your application.'
+		}
+
+		public main() => {
+			local('proceed' = .'armsetup'->queryuser('Would you like to use the Shell Plugin at this time? (y/n) '))
+			#proceed->trim
+			if(#proceed == 'y') => {
+				.getpaths
+			else(#proceed != 'n')
+				.main
+			}
+		}
+
+		protected getpaths() => {
+			stdoutnl('')
+			stdoutnl('Enter names for path shells within your new web application, seperated by commas.')
+			stdoutnl('For example, if your application will need path shells for /about, and /terms, then you\'ll need to enter: "about,terms"')
+			local('pathnames' = .'armsetup'->queryuser('Path names: '))
+			iterate(#pathnames->split(','), local('pathname')) => {
+				.addpath(#pathname)
+			}
+		}
+
+		protected addpath(pathname::string) => {
+			#pathname->trim
+			local('pathnick' = .makenick(#pathname))
+			if(#pathnick->size > 0) => {
+				protect => {
+					handle_failure => {
+						stdoutnl(error_msg)
+					}
+					.copyfile(#pathname, #pathnick,
+						-from='Plugins/Shell/SupportFiles/_models/_path_mod.lasso',
+						-to='/_models/' + #pathnick + '_mod.lasso'
+					)
+					.copyfile(#pathname, #pathnick,
+						-from='Plugins/Shell/SupportFiles/_views/_path_view.lasso',
+						-to='/_views/' + #pathnick + '_view.lasso'
+					)
+					.copyfile(#pathname, #pathnick,
+						-from='Plugins/Shell/SupportFiles/_controllers/_path_cont.lasso',
+						-to='/_controllers/' + #pathnick + '_cont.lasso'
+					)
+				}
+			}
+		}
+
+		protected copyfile(pathname::string, pathnick::string, -from::string, -to::string) => {
+			protect => {
+				handle_failure => {
+					error_msg('Error reading file: ' + #from)
+					error_code(-1)
+				}
+				local('prototype' = file(#from)->readstring)
+			}
+			if(error_currenterror == error_noerror) => {
+				#prototype->replace('_appname', .'armsetup'->appname)
+				#prototype->replace('_app', .'armsetup'->appnick)
+				#prototype->replace('_pathname', #pathname)
+				#prototype->replace('_path', #pathnick)
+				protect => {
+					handle_failure => {
+						error_msg('Error writing file: ' + #to)
+						error_code(-1)
+					}
+					.'armsetup'->addfile(-contents=#prototype->asbytes, -path=#to, -name=#pathname)
+				}
+			}
+		}
+
+		private makenick(name::string) => {
+			local('nick' = string(#name))
+			#nick->lowercase
+			#nick=string_replaceregexp(#nick, -find='[^A-Za-z0-9-_\\.~]', -replace='')
+			return #nick
+		}
+	}
+
+?>

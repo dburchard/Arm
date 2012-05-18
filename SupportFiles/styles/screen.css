@@ -1,0 +1,139 @@
+﻿#banner {
+	margin:1em 0;
+	}
+
+#banner h1 {
+	margin:0;
+	}
+
+#banner h2 {
+	margin:0;
+	}
+
+#banner p {
+	margin:0
+	}
+
+div.scrollableContainer {
+	width:90%;
+	margin:0 0 -.25em 1.5em;
+	padding:0 0 .75em;
+	overflow: auto;
+	}
+
+table {
+	margin:0 -.75em
+	}
+
+td, th {
+	padding:0 .75em;
+	white-space:nowrap;
+	text-align:left
+	}
+
+td:nth-child(1), th:nth-child(1) {
+	position:absolute;
+	left:-.075em
+	}
+
+tbody tr:nth-child(odd) {
+	background-color:#eee
+	}
+
+fieldset {
+	border:none;
+	padding:0;
+	margin:0
+	}
+
+input {
+	width:20em;
+	height:1.25em;
+	}
+
+span.label, label {
+	display:inline-block;
+	width:6em;
+	height:1.25em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	-o-text-overflow: ellipsis;
+	-icab-text-overflow: ellipsis;
+	-khtml-text-overflow: ellipsis;
+	-moz-text-overflow: ellipsis;
+	-webkit-text-overflow: ellipsis;
+	white-space:nowrap;
+	font-weight:bold
+	}
+
+span.label:after, label:after {
+	content:":";
+	}
+
+p.alert {
+	display:inline-block;
+	padding:1em 3em;
+	background-color:#eee;
+	border:thin #ccc solid;
+	text-align:center
+	}
+
+ol.navigationLinks {
+	margin:1em 0;
+	padding:0
+	}
+
+ol.navigationLinks li {
+	display:inline-block;
+	padding:0
+	}
+
+ol.navigationLinks li:before {
+	content:"-";
+	padding:0.5em
+	}
+
+ol.navigationLinks li:first-child:before {
+	content:"";
+	padding:0
+	}
+
+ol.navigationLinks li a.active {
+	font-weight:bold;
+	color:black;
+	text-decoration:none
+	}
+
+
+
+
+
+#nav ol {
+	margin:1em 0;
+	}
+
+#nav ol li {
+	display:inline-block;
+	}
+
+#nav ol li:before {
+	content:", ";
+	}
+
+#nav ol li:first-child:before {
+	content:"";
+	}
+
+#nav ol li a.active {
+	font-weight:bold;
+	color:black;
+	text-decoration:none;
+	}
+
+
+
+
+
+#footer {
+	margin:2em 0 3em;
+	}
